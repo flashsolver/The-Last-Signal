@@ -2,7 +2,7 @@
 
 A family-friendly, text-based RPG built entirely in a single HTML file using HTML, CSS, and vanilla JavaScript. 
 
-**[Click Here to Play the Game Live!](https://yourusername.github.io/your-repo-name)** *(Note: Update this link once you turn on GitHub Pages!)*
+**[Click Here to Play the Game Live!](https://github.com/flashsolver/The-Last-Signal)** *(Note: Update this link once you turn on GitHub Pages!)*
 
 ## 📖 The Story
 The space station Aurelius has a big problem. A silly computer virus has infected all the cleaning robots, turning them into mischievous "Scrap-Goblins"! The crew ran away and locked themselves inside the VIP Pizza Cafeteria to stay safe. As a brave Space Ranger, it is your job to board the station, navigate the floating comic books and sticky slime tunnels, and find the Reactor Core to reboot the main computer. 
