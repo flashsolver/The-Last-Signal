@@ -1,5 +1,7 @@
 # 🚀 The Last Signal: Space Adventure
 
+![THE LAST SIGNAL SPACE ADVENTURE! Banner](The-Last-Signal.jpg)
+
 A family-friendly, text-based RPG built entirely in a single HTML file using HTML, CSS, and vanilla JavaScript. 
 
 **[Click Here to Play the Game Live!](https://flashsolver.github.io/The-Last-Signal)** *(Note: Update this link once you turn on GitHub Pages!)*
