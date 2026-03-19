@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>The Last Signal | Space Adventure</title>
     <style>
         body {
@@ -93,6 +94,30 @@
         .danger { color: #ff6633; text-shadow: 0 0 5px #ff6633; }
         .special { color: #ffff33; text-shadow: 0 0 5px #ffff33; }
         .prompt-text { color: #aaffaa; font-style: italic; }
+
+        /* ========================================= */
+        /* MOBILE RESPONSIVE FIXES                   */
+        /* ========================================= */
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            #game-container {
+                height: 95vh; /* Gives a little more room on small screens */
+                padding: 15px;
+            }
+            #stats-bar {
+                flex-wrap: wrap; /* Lets the stats stack into rows */
+                font-size: 0.9em;
+            }
+            #stats-bar > span {
+                width: 48%; /* Creates a neat 2x2 grid for the 4 stats */
+                margin-bottom: 5px;
+            }
+            #user-input {
+                font-size: 16px; /* 16px prevents iOS from auto-zooming when typing */
+            }
+        }
     </style>
 </head>
 <body class="flicker">
@@ -107,7 +132,7 @@
     <div id="log"></div>
     <div id="input-area">
         <span id="prompt-symbol">></span>
-        <input type="text" id="user-input" autocomplete="off" autofocus>
+        <input type="text" id="user-input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" autofocus>
     </div>
 </div>
 
@@ -144,9 +169,6 @@
         osc.stop(audioCtx.currentTime + 0.05);
     }
 
-    // ============================================================
-    // STORY-DRIVEN ROOM DATA WITH CUSTOM SEARCH TEXT
-    // ============================================================
     const rooms = {
         "101": {
             name: "Airlock 0-A",
@@ -399,7 +421,6 @@
         promptNextAction();
     }
 
-    // STORYTELLER PROMPT: Adapts based on what the player has already done!
     function promptNextAction() {
         if (gameState === "PLAYING") {
             let r = rooms[player.loc];
@@ -434,7 +455,6 @@
         if (player.loc === "107" || player.loc === "109") {
             printLog("[There is a WORKBENCH here! Type 'craft' to build stuff]", false, 'special');
         }
-        // Notice I removed the hardcoded "Where to next?" from here!
     }
 
     function movePlayer(dir) {
