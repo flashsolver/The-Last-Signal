@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>The Last Signal | Space Adventure</title>
+    <style>
+        body {
+            background-color: #050505;
+            color: #33ff33;
+            font-family: 'Courier New', Courier, monospace;
+            margin: 0;
+            padding: 20px;
+            overflow: hidden;
+            text-shadow: 0 0 5px #33ff33;
+        }
+
+        body::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            z-index: 2;
+            background-size: 100% 2px, 3px 100%;
+            pointer-events: none;
+        }
+
+        #game-container {
+            max-width: 900px;
+            margin: 0 auto;
+            border: 2px solid #33ff33;
+            padding: 20px;
+            height: 90vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 3;
+            box-shadow: 0 0 20px rgba(51, 255, 51, 0.2);
+        }
+
+        #stats-bar {
+            display: flex;
+            justify-content: space-between;
+            border-bottom: 2px solid #33ff33;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+            font-weight: bold;
+        }
+
+        .alert { color: #ff3333; text-shadow: 0 0 5px #ff3333; }
+
+        #log {
+            flex-grow: 1;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-bottom: 20px;
+            padding-right: 10px;
+        }
+
+        #log::-webkit-scrollbar { width: 8px; }
+        #log::-webkit-scrollbar-thumb { background: #33ff33; }
+
+        #input-area {
+            display: flex;
+            align-items: center;
+        }
+
+        #prompt-symbol { margin-right: 10px; }
+
+        #user-input {
+            background: transparent;
+            border: none;
+            color: #33ff33;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.2em;
+            width: 100%;
+            outline: none;
+            text-shadow: 0 0 5px #33ff33;
+        }
+
+        .flicker { animation: textFlicker 3s infinite; }
+
+        @keyframes textFlicker {
+            0% { opacity: 1; }
+            5% { opacity: 0.8; }
+            10% { opacity: 1; }
+            15% { opacity: 0.9; }
+            100% { opacity: 1; }
+        }
+
+        .lore { color: #00ffff; }
+        .danger { color: #ff6633; text-shadow: 0 0 5px #ff6633; }
+        .special { color: #ffff33; text-shadow: 0 0 5px #ffff33; }
+        .prompt-text { color: #aaffaa; font-style: italic; }
+    </style>
+</head>
+<body class="flicker">
+
+<div id="game-container">
+    <div id="stats-bar">
+        <span>BATTERY: <span id="stat-power">100</span>%</span>
+        <span>AIR: <span id="stat-oxygen">100</span>%</span>
+        <span>SPOOK LEVEL: <span id="stat-stress">0</span>%</span>
+        <span>ROOM: <span id="stat-loc">UNKNOWN</span></span>
+    </div>
+    <div id="log"></div>
+    <div id="input-area">
+        <span id="prompt-symbol">></span>
+        <input type="text" id="user-input" autocomplete="off" autofocus>
+    </div>
+</div>
+
+<script>
+    let audioCtx;
+    let humOscillator;
+
+    function initAudio() {
+        if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            humOscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            humOscillator.type = 'sine';
+            humOscillator.frequency.value = 60;
+            gainNode.gain.value = 0.02;
+            humOscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            humOscillator.start();
+        }
+    }
+
+    function playBlip() {
+        if (!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(900, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(500, audioCtx.currentTime + 0.05);
+        gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.05);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.05);
+    }
+
+    // ============================================================
+    // STORY-DRIVEN ROOM DATA WITH CUSTOM SEARCH TEXT
+    // ============================================================
+    const rooms = {
+        "101": {
+            name: "Airlock 0-A",
+            desc: "You step out of your ship into the shiny silver airlock. The floor is cluttered with empty snack wrappers, tangled cables, and discarded space-boots. A faint smell of sweet bubblegum hangs in the air.",
+            searchDesc: "You kick aside a pile of empty space-chip bags and dig into a dusty toolbox...",
+            exits: { north: "102", east: "103" },
+            loot: "Shiny Gear", searched: false, hazard: 1
+        },
+        "102": {
+            name: "Main Concourse",
+            desc: "You enter a massive, cavernous hallway! The gravity generator here is broken, so comic books, playing cards, and glowing bouncy balls are floating in mid-air. It looks like a tornado hit a toy store.",
+            searchDesc: "You swim through the air, grabbing at the floating junk before it drifts away...",
+            exits: { south: "101", north: "105", east: "104", west: "109", northwest: "113" },
+            loot: "Wire", searched: false, hazard: 2
+        },
+        "103": {
+            name: "Substation 1",
+            desc: "The air in this room crackles with electricity, making the hair on your arms stand straight up. Giant, sparkly power cables snake across the walls and floor, pulsing with a bright neon blue light.",
+            searchDesc: "Careful not to touch the spicy blue cables, you peek behind a large, humming generator...",
+            exits: { west: "101", east: "114" },
+            loot: "Battery Cell", searched: false, hazard: 1
+        },
+        "104": {
+            name: "Med-Bay",
+            desc: "The hospital room is a glowing disaster zone. Blue neon band-aids are stuck to the ceiling, and someone spilled a massive puddle of alien cough syrup all over the floor. It smells like blue raspberry and ozone.",
+            searchDesc: "You carefully step over the sticky syrup puddle and check the medical cabinets...",
+            exits: { west: "102", north: "106", east: "115" },
+            loot: "Slime Goop", searched: false, hazard: 3
+        },
+        "105": {
+            name: "Captain's Quarters",
+            desc: "The boss's room! A half-eaten space-donut floats right past your helmet, dodging a very messy desk covered in sticky notes and spilled coffee.",
+            searchDesc: "You open the Captain's desk drawers and shuffle through a pile of boring paperwork...",
+            exits: { south: "102", west: "111" },
+            loot: "Data Chip", searched: false, hazard: 1
+        },
+        "106": {
+            name: "Decontamination",
+            desc: "It is like a car wash for space suits! Giant fuzzy rollers and ticklish bubble sprayers line the walls. Colorful bubbles pop harmlessly against your armor.",
+            searchDesc: "You look closely at the soapy drains on the floor and spot something wedged inside...",
+            exits: { south: "104", north: "107" },
+            loot: "Rubber Seal", searched: false, hazard: 4
+        },
+        "107": {
+            name: "Crew Lounge",
+            desc: "A super comfy room with beanbag chairs. A video game console is left paused on the TV. In the corner, you spot a heavy metal WORKBENCH for building gadgets.",
+            searchDesc: "You lift up the heavy beanbag chairs and check between the sofa cushions...",
+            exits: { south: "106", east: "108" },
+            loot: null, searched: false, hazard: 1
+        },
+        "108": {
+            name: "Hydroponics Garden",
+            desc: "A massive indoor jungle! There are giant bouncy mushrooms and singing alien plants. The air is thick and smells like fresh rain.",
+            searchDesc: "You push past the giant bouncy mushrooms and dig your hands into the dark dirt...",
+            exits: { west: "107", north: "110" },
+            loot: "Battery Cell", searched: false, hazard: 8
+        },
+        "109": {
+            name: "Storage Closet",
+            desc: "A cramped room filled with a giant mountain of missing left socks. No one knows why the space washing machines only eat left socks. There is another WORKBENCH tucked away in here.",
+            searchDesc: "You bravely dive into the mountain of missing socks...",
+            exits: { east: "102" },
+            loot: "Shiny Gear", searched: false, hazard: 0
+        },
+        "110": {
+            name: "Elevator Shaft",
+            desc: "The elevator car is missing! It leaves behind a super fun anti-gravity bouncing shaft. You can look down into the deep, dark hole where the MAIN CORE is waiting.",
+            searchDesc: "You inspect the broken elevator buttons and the edge of the deep shaft...",
+            exits: { south: "108" },
+            loot: null, searched: false, hazard: 5
+        },
+        "111": {
+            name: "Reactor Waiting Room",
+            desc: "Warning lights flash like a wild disco. A funny note is taped to the wall: 'DO NOT ENTER WITHOUT THE CHIP. The robots are throwing a dance party in there!' The flashing lights are actually draining your suit battery.",
+            searchDesc: "You quickly scan the room while the disco lights flash in your eyes...",
+            exits: { east: "105", north: "112" },
+            loot: "Coolant Spray", searched: false, hazard: 6,
+            radiationRoom: true
+        },
+        "112": {
+            name: "Reactor Core",
+            desc: "A giant glowing lava lamp! The core pulses with neon colors behind thick glass. A computer screen flashes: 'EMERGENCY REBOOT READY. INSERT CHIP'.",
+            searchDesc: "You check the maintenance panel beneath the blinking computer screen...",
+            exits: { south: "111" },
+            loot: "Power Booster", searched: false, hazard: 4,
+            locked: true,
+            lockItem: "Data Chip"
+        },
+        "113": {
+            name: "Comms Tower",
+            desc: "Banks of blinking screens line the walls. One screen has a desperate, flashing message from the missing crew!",
+            searchDesc: "You look behind the massive computer monitors...",
+            exits: { southeast: "102" },
+            loot: "Wire", searched: false, hazard: 0,
+            loreRoom: true
+        },
+        "114": {
+            name: "Slime Tunnel",
+            desc: "A tiny crawlspace. The walls are covered in sticky neon-green slime. You can hear a robot hiccuping somewhere in the dark ahead.",
+            searchDesc: "You scrape some of the neon slime away to see what is hidden underneath...",
+            exits: { west: "103", east: "106" },
+            loot: "Rubber Seal", searched: false, hazard: 7
+        },
+        "115": {
+            name: "Gadget Room",
+            desc: "A room full of cool space toys! In the center of the room sits a heavy toy chest. It has a special lock that only opens if you are perfectly calm.",
+            searchDesc: "You take a deep breath, approach the locked chest, and try to pick the lock...",
+            exits: { west: "104" },
+            loot: "Zap-O-Matic", searched: false, hazard: 2,
+            stressLocked: true
+        }
+    };
+
+    const player = {
+        pClass: null,
+        power: 100,
+        maxPower: 100,
+        oxygen: 100,
+        stress: 0,
+        loc: "101",
+        inventory: [],
+        perk: null,
+        o2Leak: false,
+        reactorPurgeArmed: false 
+    };
+
+    let gameState = "START";
+    let turnCount = 0;
+
+    const domLog  = document.getElementById('log');
+    const domInput = document.getElementById('user-input');
+    const domPower  = document.getElementById('stat-power');
+    const domOxygen = document.getElementById('stat-oxygen');
+    const domStress = document.getElementById('stat-stress');
+    const domLoc    = document.getElementById('stat-loc');
+
+    function printLog(text, isInput = false, cls = '') {
+        if (isInput) {
+            domLog.innerHTML += `\n<span style="color:#88ff88">> ${text}</span>\n`;
+        } else if (cls) {
+            domLog.innerHTML += `<span class="${cls}">${text}</span>\n`;
+        } else {
+            domLog.innerHTML += `${text}\n`;
+        }
+        domLog.scrollTop = domLog.scrollHeight;
+        playBlip();
+    }
+
+    function updateStats() {
+        domPower.innerText  = player.power;
+        domOxygen.innerText = player.oxygen;
+        domStress.innerText = player.stress;
+        domLoc.innerText    = player.pClass ? rooms[player.loc].name : "UNKNOWN";
+
+        if (player.power  <= 20) domPower.classList.add('alert');  else domPower.classList.remove('alert');
+        if (player.oxygen <= 20) domOxygen.classList.add('alert'); else domOxygen.classList.remove('alert');
+        if (player.stress >= 80) domStress.classList.add('alert'); else domStress.classList.remove('alert');
+    }
+
+    function bootSequence() {
+        printLog("*** SYSTEM BOOT ... AWESOME ***");
+        printLog("CONNECTING TO PIZZA DELIVERY ... FAILED");
+        printLog("HERO MODE ... ENGAGED");
+        printLog("\nWelcome, Space Ranger! Select your hero class:");
+        printLog("1. Gadget Geek (Perk: Hacking. Start with a Data Chip)");
+        printLog("2. Treasure Hunter (Perk: Looting. Start with Extra Shiny Gear)");
+        printLog("3. Space Knight (Perk: Brave. Start with a Zap-O-Matic)");
+    }
+
+    setInterval(() => {
+        if (gameState === "PLAYING") {
+            player.oxygen -= player.o2Leak ? 2 : 1;
+            if (rooms[player.loc].radiationRoom) {
+                player.power -= 2;
+                printLog("SUIT WARNING: The disco lights are draining your battery!", false, 'danger');
+            }
+            if (player.oxygen <= 0) {
+                endGame("SUFFOCATION");
+                promptNextAction();
+            }
+            updateStats();
+        }
+    }, 15000);
+
+    domInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+            initAudio();
+            let cmd = this.value.trim().toLowerCase();
+            this.value = '';
+            if (cmd === '') return;
+            printLog(cmd, true);
+            handleInput(cmd);
+        }
+    });
+
+    function handleInput(cmd) {
+        if (gameState === "START") {
+            if      (cmd === "1") { player.pClass = "Gadget Geek"; player.perk = "Hack"; player.inventory.push("Data Chip"); }
+            else if (cmd === "2") { player.pClass = "Treasure Hunter";   player.perk = "Loot"; player.inventory.push("Shiny Gear", "Shiny Gear"); }
+            else if (cmd === "3") { player.pClass = "Space Knight";    player.perk = "Combat"; player.inventory.push("Zap-O-Matic"); }
+            else { printLog("Oops! Pick 1, 2, or 3."); return; }
+
+            gameState = "PLAYING";
+            printLog(`\nSuit ready! You are a ${player.pClass}. Let's save the crew!`);
+            lookRoom();
+            updateStats();
+            promptNextAction();
+            return;
+        }
+
+        if (gameState === "COMBAT") { 
+            handleCombat(cmd); 
+            return; 
+        }
+        
+        if (gameState === "END") return;
+
+        let args = cmd.split(" ");
+        let verb = args[0];
+        let noun = args[1];
+
+        if (player.stress >= 100 && verb === "go" && Math.random() > 0.5) {
+            printLog("You are too spooked! You cover your eyes and run in a random direction!", false, 'danger');
+            let exits = Object.keys(rooms[player.loc].exits);
+            noun = exits[Math.floor(Math.random() * exits.length)];
+        }
+
+        switch (verb) {
+            case "go":        movePlayer(noun); break;
+            case "search":    searchRoom(); break;
+            case "inventory": case "inv": checkInventory(); break;
+            case "status":    updateStats(); printLog("Suit is looking shiny and heroic."); break;
+            case "use":       useItem(args.slice(1).join(" ")); break;
+            case "craft":     craftItem(noun); break;
+            case "look":      lookRoom(); break;
+            case "help":      printHelp(); break;
+            case "map":       printMap(); break;
+            case "read":      readLore(); break;
+            case "reboot":
+                if (player.reactorPurgeArmed && player.loc === "112") {
+                    endGame("THE REBOOT");
+                } else {
+                    printLog("You can't reboot anything right now.");
+                }
+                break;
+            default:          printLog("Command not recognized. Type 'help' for a list.");
+        }
+
+        checkEndings();
+        promptNextAction();
+    }
+
+    // STORYTELLER PROMPT: Adapts based on what the player has already done!
+    function promptNextAction() {
+        if (gameState === "PLAYING") {
+            let r = rooms[player.loc];
+            let exitList = Object.keys(r.exits).join(", ");
+            
+            if (!r.searched) {
+                printLog(`\nDo you want to 'search' the area for useful items, or 'go' somewhere else? (Exits: ${exitList})`, false, 'prompt-text');
+            } else {
+                printLog(`\nWhat will you do next? You can 'go' to another room. (Exits: ${exitList})`, false, 'prompt-text');
+            }
+        } else if (gameState === "COMBAT") {
+            printLog("\nWhat will you do? (fight, hide, run)", false, 'danger');
+        }
+    }
+
+    function lookRoom() {
+        let r = rooms[player.loc];
+        
+        printLog(`\n*** ${r.name.toUpperCase()} ***`, false, 'special');
+        
+        if (r.loreRoom) {
+            printLog(r.desc, false, 'lore');
+        } else if (r.radiationRoom) {
+            printLog(r.desc, false, 'danger');
+        } else {
+            printLog(r.desc);
+        }
+        
+        if (r.locked) {
+            printLog("[The big computer needs a floppy disk! (Hint: use data chip)]", false, 'special');
+        }
+        if (player.loc === "107" || player.loc === "109") {
+            printLog("[There is a WORKBENCH here! Type 'craft' to build stuff]", false, 'special');
+        }
+        // Notice I removed the hardcoded "Where to next?" from here!
+    }
+
+    function movePlayer(dir) {
+        let r = rooms[player.loc];
+        if (r.exits[dir]) {
+            let dest = r.exits[dir];
+
+            if (rooms[dest].locked) {
+                printLog("The cool glowing door is locked! You need a Data Chip to open it.", false, 'danger');
+                return;
+            }
+
+            player.loc = dest;
+            player.power -= 1;
+            turnCount++;
+            lookRoom();
+            rollEvent();
+        } else {
+            printLog("You bump into a wall. You can't go that way!");
+        }
+    }
+
+    function searchRoom() {
+        let r = rooms[player.loc];
+        player.power -= 2;
+
+        if (r.stressLocked && !r.searched) {
+            printLog(r.searchDesc);
+            if (player.stress >= 60) {
+                printLog("Your hands are shaking too much from being spooked! You can't open the toy chest. Try to lower your Spook Level.", false, 'danger');
+                player.stress += 5;
+                return;
+            } else {
+                printLog("You take a deep breath, stay calm, and crack the lock! You found an awesome Zap-O-Matic!", false, 'special');
+                player.inventory.push("Zap-O-Matic");
+                r.searched = true;
+                updateStats();
+                return;
+            }
+        }
+
+        if (!r.searched) {
+            printLog(r.searchDesc);
+            if (r.loot) {
+                printLog(`...You found: ${r.loot}!`, false, 'special');
+                player.inventory.push(r.loot);
+                if (player.perk === "Loot" && Math.random() > 0.5) {
+                    printLog(`...Wow! Your Treasure Hunter skills found an extra ${r.loot}!`, false, 'special');
+                    player.inventory.push(r.loot);
+                }
+            } else {
+                printLog("...but you didn't find anything useful this time.");
+            }
+            r.searched = true;
+        } else {
+            printLog("You already turned this room upside down. There is nothing else to find here.");
+        }
+        rollEvent();
+    }
+
+    function checkInventory() {
+        if (player.inventory.length === 0) printLog("Your backpack is empty.");
+        else printLog("Backpack: " + player.inventory.join(", "));
+    }
+
+    function craftItem(item) {
+        if (player.loc !== "107" && player.loc !== "109") {
+            printLog("You need to be at a WORKBENCH to build cool stuff.");
+            return;
+        }
+        let inv = player.inventory;
+        let has = (i) => inv.includes(i);
+        let remove = (i) => inv.splice(inv.indexOf(i), 1);
+
+        if (item === "bomb" && has("Shiny Gear") && has("Wire")) {
+            remove("Shiny Gear"); remove("Wire");
+            inv.push("Tickle Bomb");
+            printLog("Crafted: Tickle Bomb! (Makes robots laugh so hard they shut down)", false, 'special');
+
+        } else if (item === "patch" && has("Rubber Seal") && has("Slime Goop")) {
+            remove("Rubber Seal"); remove("Slime Goop");
+            inv.push("Patch Kit");
+            printLog("Crafted: Patch Kit! (Use this to fix air leaks in your suit)", false, 'special');
+
+        } else if (item === "booster" && has("Battery Cell") && has("Coolant Spray")) {
+            remove("Battery Cell"); remove("Coolant Spray");
+            inv.push("Power Booster");
+            printLog("Crafted: Power Booster! (Gives you a ton of battery power)", false, 'special');
+
+        } else {
+            printLog("You don't have the right parts! Type 'help' to see the recipes.");
+        }
+    }
+
+    function useItem(item) {
+        let inv = player.inventory;
+        let idx = inv.findIndex(i => i.toLowerCase().includes(item.toLowerCase()));
+
+        if (idx === -1) { printLog("You don't have that in your backpack!"); return; }
+
+        let used = inv[idx];
+
+        if (used === "Tickle Bomb") {
+            if (gameState === "COMBAT") {
+                printLog("You throw the Tickle Bomb! The Scrap-Goblin laughs so hard its wheels pop off!", false, 'special');
+                inv.splice(idx, 1);
+                gameState = "PLAYING";
+                updateStats();
+            } else {
+                printLog("Save the Tickle Bomb for when a Scrap-Goblin attacks you!");
+            }
+
+        } else if (used === "Patch Kit") {
+            if (player.o2Leak) {
+                printLog("You stick the Patch Kit on your suit. The leak is fixed! Good job.", false, 'special');
+                player.o2Leak = false;
+                inv.splice(idx, 1);
+            } else {
+                printLog("Your suit is perfectly fine. Don't waste it!");
+            }
+
+        } else if (used === "Power Booster") {
+            printLog("You plug in the Power Booster. ZAP! +20% Battery power!", false, 'special');
+            player.power = Math.min(player.maxPower, player.power + 20);
+            inv.splice(idx, 1);
+            updateStats();
+
+        } else if (used === "Data Chip") {
+            if (player.loc === "112") {
+                printLog("You slide the floppy disk into the giant computer.", false, 'special');
+                printLog("ACCESS GRANTED! THE BIG RED REBOOT BUTTON APPEARS!", false, 'danger');
+                printLog("Type 'reboot' to fix the whole station and save the crew!", false, 'special');
+                player.reactorPurgeArmed = true;
+                inv.splice(idx, 1);
+            } else {
+                printLog("You need a giant computer to use this chip. (Hint: Go to the Reactor Core)");
+            }
+
+        } else {
+            printLog(`You can't use the ${used} right now.`);
+        }
+    }
+
+    function readLore() {
+        if (player.loc === "113") {
+            printLog("\n== MESSAGE FROM THE CREW ==", false, 'lore');
+            printLog("To whoever is reading this...", false, 'lore');
+            printLog("The robot janitors got a computer virus and went totally crazy!", false, 'lore');
+            printLog("They started stealing all our tools to build a giant metal nest.", false, 'lore');
+            printLog("We ran away and locked ourselves inside the VIP Pizza Cafeteria.", false, 'lore');
+            printLog("We have plenty of snacks, but the TV is broken and we are bored.", false, 'lore');
+            printLog("Please go to the Reactor Core and REBOOT the main computer!", false, 'lore');
+            printLog("If you save us, you can have the last slice of pepperoni! Hurry!", false, 'lore');
+            player.stress -= 10; 
+            if (player.stress < 0) player.stress = 0;
+            updateStats();
+        } else {
+            printLog("There are no notes to read here.");
+        }
+    }
+
+    function rollEvent() {
+        let r = rooms[player.loc];
+        let roll = Math.floor(Math.random() * 20) + 1;
+
+        if (roll <= r.hazard) {
+            startCombat();
+        } else if (roll === 20) {
+            printLog("\n** OOPS! **", false, 'danger');
+            printLog("You trip over a floating space-boot and snag your suit! Air is leaking!", false, 'danger');
+            player.o2Leak = true;
+            player.stress += 10;
+        } else if (roll > 15) {
+            let flavour = [
+                "A friendly cleaning bot rolls by, wearing a silly hat made of tin foil.",
+                "You hear a loud BOING sound from the next room over.",
+                "A glitter bomb goes off in the distance. Very sparkly.",
+                "Your radio plays a really cheesy disco song for three seconds.",
+                "A piece of pizza floats past your face. You try to bite it but miss."
+            ];
+            printLog("\n" + flavour[Math.floor(Math.random() * flavour.length)]);
+            player.stress += 5;
+        }
+        updateStats();
+    }
+
+    function startCombat() {
+        gameState = "COMBAT";
+        let openers = [
+            "CLANK! A rusty Scrap-Goblin drops from the ceiling! It wants your backpack!",
+            "Oh no! A janitor bot with googly eyes blocks the door! It's a Scrap-Goblin!",
+            "Beep Boop! A Scrap-Goblin rolls out of a closet and points a feather duster at you!"
+        ];
+        printLog("\n!!! ROBOT ATTACK !!!", false, 'danger');
+        printLog(openers[Math.floor(Math.random() * openers.length)], false, 'danger');
+    }
+
+    function handleCombat(cmd) {
+        if (cmd === "fight") {
+            if (player.inventory.includes("Zap-O-Matic") || player.inventory.includes("Tickle Bomb")) {
+                let weapon = player.inventory.includes("Zap-O-Matic") ? "Zap-O-Matic" : "Tickle Bomb";
+                printLog(`You use your ${weapon}! The robot does a silly dizzy spin and rolls away beep-booping.`, false, 'special');
+                if (weapon === "Tickle Bomb") player.inventory.splice(player.inventory.indexOf("Tickle Bomb"), 1);
+            } else {
+                printLog("You wrestle the robot! You win, but it tickles you and drains some battery power!", false, 'danger');
+                player.power -= 10;
+                player.oxygen -= 5;
+                player.stress += 10;
+            }
+            gameState = "PLAYING";
+
+        } else if (cmd === "hide") {
+            let hideChance = 100 - player.stress;
+            if (Math.random() * 100 < hideChance) {
+                printLog("You hide behind a floating trash can. The confused robot rolls right past you!");
+            } else {
+                printLog("Oh no! You sneeze really loud! The robot pokes you and snags your suit before leaving!", false, 'danger');
+                player.oxygen -= 15;
+                player.stress += 20;
+                player.o2Leak = true;
+            }
+            gameState = "PLAYING";
+
+        } else if (cmd === "run") {
+            printLog("You slip on a banana peel and slide right out the door!", false, 'danger');
+            player.stress += (player.perk === "Combat" ? 10 : 20);
+            let exits = Object.keys(rooms[player.loc].exits);
+            let dir = exits[Math.floor(Math.random() * exits.length)];
+            let dest = rooms[player.loc].exits[dir];
+            if (!rooms[dest].locked) {
+                player.loc = dest;
+            }
+            gameState = "PLAYING";
+            lookRoom();
+
+        } else if (cmd === "use tickle bomb" || (cmd === "use" && player.inventory.includes("Tickle Bomb"))) {
+            printLog("You throw the Tickle Bomb! The robot laughs so hard its wheels pop off!", false, 'special');
+            player.inventory.splice(player.inventory.indexOf("Tickle Bomb"), 1);
+            gameState = "PLAYING";
+
+        } else {
+            printLog("That doesn't work! Choose: 'fight', 'hide', or 'run'.");
+            return;
+        }
+
+        updateStats();
+        checkEndings();
+        promptNextAction();
+    }
+
+    function checkEndings() {
+        if (player.power <= 0)   { endGame("NO POWER");     return; }
+        if (player.oxygen <= 0)  { endGame("SUFFOCATION");  return; }
+        if (player.loc === "110" && player.power > 10) { endGame("THE SAVIOR"); return; }
+    }
+
+    function endGame(reason) {
+        gameState = "END";
+        printLog("\n==================================", false, 'special');
+        switch (reason) {
+            case "NO POWER":
+                printLog("Oh no! Your suit powers down.", false, 'danger');
+                printLog("A Scrap-Goblin rolls over and draws a funny mustache on your helmet with a marker while you wait for a space-tow-truck.", false, 'danger');
+                printLog("\nGAME OVER: OUT OF JUICE", false, 'danger');
+                break;
+            case "SUFFOCATION":
+                printLog("Your suit is out of air! You have to hit the emergency eject button.", false, 'danger');
+                printLog("You float back to your ship, leaving the crew to eat stale space-crackers.", false, 'danger');
+                printLog("\nGAME OVER: EJECTED", false, 'danger');
+                break;
+            case "THE SAVIOR":
+                printLog("You reach the bottom of the elevator! The backup lights turn on.", false, 'special');
+                printLog("You saved the station just in time, but the main computer is still glitchy.", false, 'special');
+                printLog("The crew thanks you, but the pizza is slightly cold.", false, 'special');
+                printLog("\nENDING: PRETTY GOOD JOB", false, 'special');
+                break;
+            case "THE REBOOT":
+                printLog("You smash the big red REBOOT button!", false, 'lore');
+                printLog("Every single Scrap-Goblin spins in a circle, plays a happy tune, and goes to sleep.", false, 'lore');
+                printLog("The station lights up perfectly. The cafeteria doors unlock!", false, 'lore');
+                printLog("The crew runs out cheering and hands you a massive slice of pepperoni pizza!", false, 'lore');
+                printLog("\nENDING: ULTIMATE SPACE HERO", false, 'special');
+                break;
+        }
+        printLog("\nRefresh the page to play again!", false, 'special');
+    }
+
+    function printHelp() {
+        printLog("\nCOMMANDS:");
+        printLog("  go [north/south/east/west/northwest/etc]");
+        printLog("  search");
+        printLog("  inventory / inv");
+        printLog("  use [item name]");
+        printLog("  craft [bomb / patch / booster]");
+        printLog("  read   (use this in the Comms Tower)");
+        printLog("  reboot (use this in the Reactor Core after using the chip)");
+        printLog("  status / look / map / help");
+        printLog("\nWORKBENCH RECIPES:");
+        printLog("  Tickle Bomb   = Shiny Gear + Wire");
+        printLog("  Patch Kit     = Rubber Seal + Slime Goop");
+        printLog("  Power Booster = Battery Cell + Coolant Spray");
+    }
+
+    function printMap() {
+        printLog("\n      [112] Reactor Core (SECRET!)");
+        printLog("        |");
+        printLog("      [111] Reactor Waiting Room");
+        printLog("        |");
+        printLog("      [110] Elevator Shaft         [113] Comms Tower");
+        printLog("        |                              |");
+        printLog("      [108]---[107]          [102]---/");
+        printLog("               |              | \\");
+        printLog("             [106]      [109] | [105]---[111]");
+        printLog("               |              |");
+        printLog("             [104]---[115]  [101]---[103]---[114]---[106]");
+        printLog("               \\");
+        printLog("               [102] Main Concourse (hub)");
+        printLog("\nAREAS: [111][112] West Wing | [113] NW Comms | [114] Slime Tunnel | [115] Gadget Room");
+    }
+
+    bootSequence();
+    updateStats();
+</script>
+</body>
+</html>
