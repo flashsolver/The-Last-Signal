@@ -5,12 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>The Last Signal | Space Adventure</title>
     <style>
-        body {
+        /* Lock the body height so the keyboard doesn't break the layout */
+        html, body {
+            height: 100%;
+            margin: 0;
             background-color: #050505;
             color: #33ff33;
             font-family: 'Courier New', Courier, monospace;
-            margin: 0;
-            padding: 20px;
             overflow: hidden;
             text-shadow: 0 0 5px #33ff33;
         }
@@ -31,12 +32,13 @@
             max-width: 900px;
             margin: 0 auto;
             border: 2px solid #33ff33;
-            padding: 20px;
-            height: 90vh;
+            padding: 15px;
+            height: calc(100% - 30px); /* Fills screen perfectly minus padding */
             display: flex;
             flex-direction: column;
             position: relative;
             z-index: 3;
+            box-sizing: border-box;
             box-shadow: 0 0 20px rgba(51, 255, 51, 0.2);
         }
 
@@ -45,8 +47,9 @@
             justify-content: space-between;
             border-bottom: 2px solid #33ff33;
             padding-bottom: 10px;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             font-weight: bold;
+            flex-shrink: 0;
         }
 
         .alert { color: #ff3333; text-shadow: 0 0 5px #ff3333; }
@@ -55,16 +58,20 @@
             flex-grow: 1;
             overflow-y: auto;
             white-space: pre-wrap;
-            margin-bottom: 20px;
+            margin-bottom: 10px;
             padding-right: 10px;
         }
 
         #log::-webkit-scrollbar { width: 8px; }
         #log::-webkit-scrollbar-thumb { background: #33ff33; }
 
+        /* Locked to the bottom */
         #input-area {
             display: flex;
             align-items: center;
+            flex-shrink: 0;
+            padding-top: 10px;
+            border-top: 1px dashed #226622;
         }
 
         #prompt-symbol { margin-right: 10px; }
@@ -95,27 +102,22 @@
         .special { color: #ffff33; text-shadow: 0 0 5px #ffff33; }
         .prompt-text { color: #aaffaa; font-style: italic; }
 
-        /* ========================================= */
-        /* MOBILE RESPONSIVE FIXES                   */
-        /* ========================================= */
         @media (max-width: 600px) {
-            body {
-                padding: 10px;
-            }
             #game-container {
-                height: 95vh; /* Gives a little more room on small screens */
-                padding: 15px;
+                border: none; /* Removes thick borders on small phones */
+                padding: 10px;
+                height: 100%;
             }
             #stats-bar {
-                flex-wrap: wrap; /* Lets the stats stack into rows */
+                flex-wrap: wrap;
                 font-size: 0.9em;
             }
             #stats-bar > span {
-                width: 48%; /* Creates a neat 2x2 grid for the 4 stats */
+                width: 48%;
                 margin-bottom: 5px;
             }
             #user-input {
-                font-size: 16px; /* 16px prevents iOS from auto-zooming when typing */
+                font-size: 16px; /* Stops iOS auto-zoom */
             }
         }
     </style>
@@ -390,6 +392,14 @@
         let verb = args[0];
         let noun = args[1];
 
+        // *** SMART PARSER FOR KIDS ***
+        // If they just type "north", automatically change it to "go north"
+        const directions = ["north", "south", "east", "west", "northeast", "northwest", "southeast", "southwest", "n", "s", "e", "w"];
+        if (directions.includes(verb)) {
+            noun = verb;
+            verb = "go";
+        }
+
         if (player.stress >= 100 && verb === "go" && Math.random() > 0.5) {
             printLog("You are too spooked! You cover your eyes and run in a random direction!", false, 'danger');
             let exits = Object.keys(rooms[player.loc].exits);
@@ -459,6 +469,13 @@
 
     function movePlayer(dir) {
         let r = rooms[player.loc];
+        
+        // Translate shortcuts (n -> north)
+        if (dir === "n") dir = "north";
+        if (dir === "s") dir = "south";
+        if (dir === "e") dir = "east";
+        if (dir === "w") dir = "west";
+
         if (r.exits[dir]) {
             let dest = r.exits[dir];
 
